@@ -7,26 +7,23 @@ import com.peripateticgames.vertx.annotation.parser.mockup.impl.ExampleServiceIn
 import io.vertx.core.*;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
+import io.vertx.ext.unit.junit.Repeat;
+import io.vertx.ext.unit.junit.RepeatRule;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.serviceproxy.ProxyHelper;
-import net.bytebuddy.ByteBuddy;
-import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
-import net.bytebuddy.implementation.FixedValue;
-import net.bytebuddy.implementation.MethodDelegation;
-import net.bytebuddy.matcher.ElementMatchers;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
 import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.ReflectPermission;
 import java.security.Permission;
+import java.util.concurrent.Semaphore;
 
-import static net.bytebuddy.matcher.ElementMatchers.named;
-import static org.hamcrest.core.Is.is;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 /**
  * Created by david.
@@ -38,6 +35,10 @@ public class InjectorTest {
     private static final String INVALID_ADDRESS = "invalid.address";
     private Vertx vertx;
     private SecurityManager securityManager;
+
+    @Rule
+    public RepeatRule rule = new RepeatRule();
+
 
     @Before
     public void setUp(TestContext context) throws Exception {
@@ -63,67 +64,50 @@ public class InjectorTest {
     }
 
     @Test
+    @Repeat(100)
     public void testinjectProxiesWithPublicMembers(TestContext context) {
         final Async async = context.async();
-
         ExampleVerticleWithInjectForPublicMembers verticle = new ExampleVerticleWithInjectForPublicMembers();
-        vertx.deployVerticle(verticle, new DeploymentOptions(), context.asyncAssertSuccess());
-
-        Injector.injectProxies(verticle);
-
-        verticle.proxy.sayHello((handler) -> {
-            checkAnswer(async, handler);
-        });
+        vertx.deployVerticle(verticle, new DeploymentOptions(),
+                checkInjectionForProperty(context, verticle,
+                        () -> verticle.proxy.sayHello(handler -> checkAnswer(async, handler))));
     }
 
 
     @Test
+    @Repeat(100)
     public void testinjectProxiesWithProtectedMembers(TestContext context) {
         final Async async = context.async();
-
         ExampleVerticleWithInjectForProtectedMembers verticle = new ExampleVerticleWithInjectForProtectedMembers();
-        vertx.deployVerticle(verticle, new DeploymentOptions(), context.asyncAssertSuccess());
-
-        Injector.injectProxies(verticle);
-
-        verticle.getProtectedProxy().sayHello((handler) -> {
-            checkAnswer(async, handler);
-
-        });
+        vertx.deployVerticle(verticle, new DeploymentOptions(),
+                checkInjectionForProperty(context, verticle,
+                        () -> verticle.getProtectedProxy().sayHello(handler -> checkAnswer(async, handler))));
     }
 
     @Test
+    @Repeat(100)
     public void testinjectProxiesWithPrivateMembers(TestContext context) {
         final Async async = context.async();
-
         ExampleVerticleWithInjectForPrivateMembers verticle = new ExampleVerticleWithInjectForPrivateMembers();
-        vertx.deployVerticle(verticle, new DeploymentOptions(), context.asyncAssertSuccess());
+        vertx.deployVerticle(verticle, new DeploymentOptions(),
+                checkInjectionForProperty(context, verticle,
+                        () -> verticle.getPrivateProxy().sayHello(handler -> checkAnswer(async, handler))));
 
-        Injector.injectProxies(verticle);
-
-        verticle.getPrivateProxy().sayHello((handler) -> {
-            checkAnswer(async, handler);
-
-        });
     }
 
+
     @Test
+    @Repeat(100)
     public void testinjectProxiesWithPackageMembers(TestContext context) {
         final Async async = context.async();
-
         ExampleVerticleWithInjectForPackageMembers verticle = new ExampleVerticleWithInjectForPackageMembers();
-        vertx.deployVerticle(verticle, new DeploymentOptions(), context.asyncAssertSuccess());
-
-        Injector.injectProxies(verticle);
-
-        verticle.getPackageProxy().sayHello((handler) -> {
-            checkAnswer(async, handler);
-
-        });
+        vertx.deployVerticle(verticle, new DeploymentOptions(), checkInjectionForProperty(context, verticle,
+                () -> verticle.getPackageProxy().sayHello(handler -> checkAnswer(async, handler))));
     }
 
     @Test(expected = VertxInjectionException.class)
-    public void testinjectProxiesExceptionProducedByInvalidClass(TestContext context) {
+    @Repeat(100)
+    public void testinjectProxiesExceptionProducedByInvalidClass(TestContext context) throws InterruptedException {
 
         final Async async = context.async();
 
@@ -137,8 +121,17 @@ public class InjectorTest {
                 super.start();
             }
         };
-        vertx.deployVerticle(verticle, new DeploymentOptions(), context.asyncAssertSuccess());
 
+        Semaphore semaphore = new Semaphore(0);
+        vertx.deployVerticle(verticle, new DeploymentOptions(), handle -> {
+            if (handle.succeeded()) {
+                semaphore.release();
+            } else {
+                context.fail("Verticle was not deployed");
+            }
+        });
+
+        semaphore.acquire();
         try {
             Injector.injectProxies(verticle);
         } finally {
@@ -147,7 +140,8 @@ public class InjectorTest {
     }
 
     @Test(expected = VertxInjectionException.class)
-    public void testinjectProxiesExceptionProducedBySecurityPolice(TestContext context) {
+    @Repeat(100)
+    public void testinjectProxiesExceptionProducedBySecurityPolice(TestContext context) throws InterruptedException {
 
         final Async async = context.async();
 
@@ -174,8 +168,16 @@ public class InjectorTest {
                 super.start();
             }
         };
-        vertx.deployVerticle(verticle, new DeploymentOptions(), context.asyncAssertSuccess());
+        Semaphore semaphore = new Semaphore(0);
 
+        vertx.deployVerticle(verticle, new DeploymentOptions(),  handle -> {
+            if (handle.succeeded()) {
+                semaphore.release();
+            } else {
+                context.fail("Verticle was not deployed");
+            }
+        });
+        semaphore.acquire();
         try {
             Injector.injectProxies(verticle);
         } finally {
@@ -184,11 +186,21 @@ public class InjectorTest {
     }
 
     @Test
-    public void testinjectProxiesWithSeveralInjections(TestContext context) {
+    @Repeat(100)
+    public void testinjectProxiesWithSeveralInjections(TestContext context) throws InterruptedException {
         final Async async = context.async();
 
         ExampleVerticleWithSeveralInjects verticle = new ExampleVerticleWithSeveralInjects();
-        vertx.deployVerticle(verticle, new DeploymentOptions(), context.asyncAssertSuccess());
+        Semaphore semaphore = new Semaphore(0);
+        vertx.deployVerticle(verticle, new DeploymentOptions(), handle -> {
+            if (handle.succeeded()) {
+                semaphore.release();
+            } else {
+                context.fail("Verticle was not deployed");
+            }
+        });
+
+        semaphore.acquire();
 
         Injector.injectProxies(verticle);
 
@@ -208,6 +220,18 @@ public class InjectorTest {
                     async.complete();
                 }
         });
+    }
+
+    private Handler<AsyncResult<String>> checkInjectionForProperty(TestContext context, Verticle verticle,
+                                                                   Runnable runnable) {
+        return handle -> {
+            if (handle.succeeded()) {
+                Injector.injectProxies(verticle);
+                runnable.run();
+            } else {
+                context.fail("Failure");
+            }
+        };
     }
 
     private void checkAnswer(Async async, AsyncResult<String> handler) {

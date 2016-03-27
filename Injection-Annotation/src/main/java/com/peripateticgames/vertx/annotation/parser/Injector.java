@@ -14,23 +14,27 @@ public class Injector {
 
 
     public static <T extends Verticle> void injectProxies(T verticle) {
-        for (Field field : verticle.getClass().getDeclaredFields()) {
-            Inject[] annotationsByType = field.getAnnotationsByType(Inject.class);
-            if (annotationsByType.length == 1) {
-                Inject injectAnnotation = annotationsByType[0];
-                final String proxyAddress = injectAnnotation.address();
-                try {
-                    Object proxy = ProxyHelper.createProxy(field.getType(), verticle.getVertx(), proxyAddress);
-                    boolean fieldAccessibility = field.isAccessible();
-                    field.setAccessible(true);
-                    field.set(verticle, proxy);
-                    field.setAccessible(fieldAccessibility);
-                } catch (IllegalAccessException | IllegalStateException | SecurityException e) {
-                    throw new VertxInjectionException(String.format("Error setting the value of property %s of type %s in class %s",
-                            field.getName(), field.getType().getName(), verticle.getClass().getName()), e.getCause());
+        try {
+            for (Field field : verticle.getClass().getDeclaredFields()) {
+                Inject[] annotationsByType = field.getAnnotationsByType(Inject.class);
+                if (annotationsByType.length == 1) {
+                    Inject injectAnnotation = annotationsByType[0];
+                    final String proxyAddress = injectAnnotation.address();
+                    try {
+                        Object proxy = ProxyHelper.createProxy(field.getType(), verticle.getVertx(), proxyAddress);
+                        boolean fieldAccessibility = field.isAccessible();
+                        field.setAccessible(true);
+                        field.set(verticle, proxy);
+                        field.setAccessible(fieldAccessibility);
+                    } catch (IllegalAccessException | IllegalStateException  e) {
+                        throw new VertxInjectionException(String.format("Error setting the value of property %s of type %s in class %s",
+                                field.getName(), field.getType().getName(), verticle.getClass().getName()), e.getCause());
+                    }
                 }
-
             }
+        } catch (SecurityException e) {
+            throw new VertxInjectionException(String.format("Error injecting values to class %s sue to a security exception",
+                    verticle.getClass().getName()), e.getCause());
         }
     }
 }
