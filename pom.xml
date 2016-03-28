@@ -8,6 +8,7 @@
     <modules>
         <module>Injector-agent</module>
         <module>Injection-Annotation</module>
+        <module>Injection-Example</module>
     </modules>
     <packaging>pom</packaging>
 
